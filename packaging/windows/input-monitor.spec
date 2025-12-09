@@ -10,8 +10,12 @@ a = Analysis(
     pathex=['.'],
     binaries=[],
     datas=[
-        # Example: add icon or other resources if provided
-        # ('assets/icon.ico', '.'),
+        # Include the packaged image resources so the bundled exe can
+        # find them via sys._MEIPASS/input_monitor/images
+        ('input_monitor/images/mouse-left-click.png', 'input_monitor/images'),
+        ('input_monitor/images/mouse-middle-click.png', 'input_monitor/images'),
+        ('input_monitor/images/mouse-right-click.png', 'input_monitor/images'),
+        ('input_monitor/images/windows-10-logo.png', 'input_monitor/images'),
     ],
     hiddenimports=['pynput', 'keyboard'],
     hookspath=[],

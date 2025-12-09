@@ -1,7 +1,9 @@
 import tkinter as tk
+import tkinter.font as tkfont
 import os
 # 'font' module not required in this module; use tkinter font definitions inline where needed.
 import time
+import sys
 from datetime import datetime
 from pynput import mouse
 import keyboard as kb
@@ -46,23 +48,36 @@ class InputMonitorWidget:
         # Input and icon display
         self.display_frame = tk.Frame(self.frame, bg='#2b2b2b')
         self.display_frame.pack(pady=2, padx=10, fill=tk.X)
+        # Use a center_frame gridded into a 3-column layout to center contents
+        self.display_frame.columnconfigure(0, weight=1)
+        self.display_frame.columnconfigure(1, weight=0)
+        self.display_frame.columnconfigure(2, weight=1)
+        self.center_frame = tk.Frame(self.display_frame, bg='#2b2b2b')
+        self.center_frame.grid(row=0, column=1)
+
+        # Named fonts for consistent usage across labels
+        self.font_input = tkfont.Font(family='Consolas', size=20)
+        self.font_mouse = tkfont.Font(family='Consolas', size=10)
+        # Make selection label larger at size 14 (user preference)
+        self.font_selection = tkfont.Font(family='Consolas', size=14)
+        self.font_time = tkfont.Font(family='Arial', size=8)
 
         # Icon label for event/keys
-        self.icon_label = tk.Label(self.display_frame, bg='#2b2b2b')
+        self.icon_label = tk.Label(self.center_frame, bg='#2b2b2b')
         self.icon_label.pack(side=tk.LEFT, padx=(0, 6))
 
         # Input display
         self.input_label = tk.Label(
-            self.display_frame,
+            self.center_frame,
             text="", 
             bg='#2b2b2b', 
             fg='#00ff00',
-            font=('Consolas', 16),
+            font=self.font_input,
             wraplength=self.width-20
         )
         self.input_label.pack(side=tk.LEFT, pady=2)
         # Inline composition frame allows placing icons inline with text (e.g. Win icon between modifiers)
-        self.inline_frame = tk.Frame(self.display_frame, bg='#2b2b2b')
+        self.inline_frame = tk.Frame(self.center_frame, bg='#2b2b2b')
         # Track any inline label widgets we create so they can be cleared
         self._inline_children = []
         
@@ -72,7 +87,7 @@ class InputMonitorWidget:
             text="", 
             bg='#2b2b2b', 
             fg='#cccccc',
-            font=('Arial', 8)
+            font=self.font_time
         )
         self.time_label.pack(pady=2)
         
@@ -85,7 +100,7 @@ class InputMonitorWidget:
             text="X: 0, Y: 0 | ΔX: 0, ΔY: 0",
             bg='#2b2b2b',
             fg='#00ccff',
-            font=('Consolas', 10)
+            font=self.font_mouse
         )
         self.mouse_label.pack(side=tk.LEFT)
         
@@ -98,7 +113,7 @@ class InputMonitorWidget:
             text="Selection: 0 x 0",
             bg='#2b2b2b',
             fg='#ff9900',
-            font=('Consolas', 10)
+            font=self.font_mouse
         )
         self.selection_label.pack(side=tk.LEFT)
         
@@ -163,15 +178,16 @@ class InputMonitorWidget:
             'enter': 'Enter',
             'tab': 'Tab',
             'esc': 'Esc',
-            'up': 'Up',
-            'down': 'Down',
-            'left': 'Left',
-            'right': 'Right',
-            'backspace': 'Backspace',
-            'delete': 'Delete',
+            'up': 'Up ⬆',
+            'down': 'Down ⬇',
+            'left': 'Left ⬅',
+            'right': 'Right ➡',
+            'backspace': 'Backspace ←',
+            'delete': 'Delete ⌫',
             'insert': 'Insert',
             'home': 'Home',
             'end': 'End',
+            'print screen': 'Print Screen 📸',
             'page up': 'Page Up',
             'page down': 'Page Down',
             'caps lock': 'Caps Lock',
@@ -199,7 +215,13 @@ class InputMonitorWidget:
     def load_icons(self):
         """Load image icons from the images directory if available."""
         try:
-            base_dir = os.path.join(os.path.dirname(__file__), 'images')
+            # If bundled by PyInstaller, resources are extracted to sys._MEIPASS
+            # Use that path if present. Otherwise, look for images relative
+            # to the module file (normal installed or dev mode).
+            if getattr(sys, '_MEIPASS', None):
+                base_dir = os.path.join(getattr(sys, '_MEIPASS'), 'input_monitor', 'images')
+            else:
+                base_dir = os.path.join(os.path.dirname(__file__), 'images')
             win_path = os.path.join(base_dir, 'windows-10-logo.png')
             left_path = os.path.join(base_dir, 'mouse-left-click.png')
             right_path = os.path.join(base_dir, 'mouse-right-click.png')
@@ -477,7 +499,7 @@ class InputMonitorWidget:
             right_text = input_text[end:].lstrip()
             # Helper to create a label with given text
             def make_label(text):
-                lbl = tk.Label(self.inline_frame, text=text, bg='#2b2b2b', fg='#00ff00', font=('Consolas', 16))
+                lbl = tk.Label(self.inline_frame, text=text, bg='#2b2b2b', fg='#00ff00', font=self.input_label.cget('font'))
                 lbl.pack(side=tk.LEFT)
                 self._inline_children.append(lbl)
                 return lbl
@@ -500,7 +522,12 @@ class InputMonitorWidget:
             except Exception:
                 pass
             # Update the display with a single text label
-            self.input_label.config(text=input_text)
+            # If this is a 'Selected Area' message, show it with the selection font
+            if input_text.startswith('Selected Area'):
+                self.input_label.config(font=self.font_selection, text=input_text)
+            else:
+                # Ensure input label uses default font for normal messages
+                self.input_label.config(font=self.font_input, text=input_text)
             # Update icon if provided, otherwise clear it
             if icon:
                 self.icon_label.config(image=icon)
@@ -515,6 +542,11 @@ class InputMonitorWidget:
     
     def reset_display(self):
         self.input_label.config(text="")
+        # Restore default input font
+        try:
+            self.input_label.config(font=self.font_input)
+        except Exception:
+            pass
         self.time_label.config(text="")
         # Clear icon as well
         try:
