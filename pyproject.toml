@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "input-monitor"
+# Version will be dynamically taken from `input_monitor.version.VERSION`
+dynamic = ["version"]
+
+# Optional metadata
+description = "An on-screen input & mouse tracker widget"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "jabezwinston"}]
+requires-python = ">=3.8"
+keywords = ["input", "monitor", "widget", "mouse", "keyboard"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+    "pynput>=1.7",
+    "keyboard>=0.13"
+]
+
+[project.urls]
+Homepage = "https://github.com/jabezwinston/input-monitor"
+
+[tool.setuptools]
+packages = ["input_monitor"]
+
+[tool.setuptools.dynamic]
+version = { attr = "input_monitor.version.VERSION" }
+
+[project.scripts]
+"input-monitor" = "input_monitor.app:main"

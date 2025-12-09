@@ -6,6 +6,8 @@ from pynput import mouse
 import keyboard as kb
 import threading
 
+
+
 class InputMonitorWidget:
     def __init__(self, root):
         self.root = root
@@ -16,7 +18,7 @@ class InputMonitorWidget:
         self.root.attributes('-topmost', True)
         
         # Set initial position and size
-        self.width = 350
+        self.width = 360
         self.height = 180
         self.root.geometry(f"{self.width}x{self.height}+100+100")
         
@@ -42,10 +44,10 @@ class InputMonitorWidget:
         # Input display
         self.input_label = tk.Label(
             self.frame, 
-            text="Waiting for input...", 
+            text="", 
             bg='#2b2b2b', 
             fg='#00ff00',
-            font=('Consolas', 12),
+            font=('Consolas', 16),
             wraplength=self.width-20
         )
         self.input_label.pack(pady=2, padx=10)
@@ -134,14 +136,14 @@ class InputMonitorWidget:
             'shift': 'Shift',
             'lshift': 'Shift',
             'rshift': 'Shift',
-            'windows': 'Win',
-            'meta': 'Win',
-            'leftmeta': 'Win',
-            'rightmeta': 'Win',
-            'super': 'Win',
-            'lwin': 'Win',
-            'rwin': 'Win',
-            'cmd': 'Win',
+            'windows': 'Win ⊞',
+            'meta': 'Win ⊞',
+            'leftmeta': 'Win ⊞',
+            'rightmeta': 'Win ⊞',
+            'super': 'Win ⊞',
+            'lwin': 'Win ⊞',
+            'rwin': 'Win ⊞',
+            'cmd': 'Win ⊞',
             'space': 'Space',
             'enter': 'Enter',
             'tab': 'Tab',
@@ -245,8 +247,9 @@ class InputMonitorWidget:
             return
             
         # Remap common Linux case where the Windows key reports as 'alt' (scan_code 125/126)
-        if scan_code is not None and key_name in ('alt', 'alt gr') and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
-            key_name = 'windows'
+        # Use the raw event name for the check since key_name may be the formatted display label
+        if scan_code is not None and isinstance(raw_name, str) and raw_name.lower() in ('alt', 'alt gr') and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
+            key_name = self.format_key_name('windows')
 
         if key_name not in self.current_keys:
             self.current_keys.add(key_name)
@@ -257,8 +260,10 @@ class InputMonitorWidget:
         # Get modifiers and non-modifiers in the order they were pressed
         # Derive the order based on timestamps of key presses for reliability
         ordered_keys = [k for k, t in sorted(self.key_press_order, key=lambda x: x[1])]
-        modifiers = [k for k in ordered_keys if k in ['Ctrl', 'Alt', 'Shift', 'Win']]
-        non_modifiers = [k for k in ordered_keys if k not in ['Ctrl', 'Alt', 'Shift', 'Win']]
+        # Support both 'Win' and 'Win ⊞' display strings for the Windows key
+        win_display_values = {'Win', 'Win ⊞'}
+        modifiers = [k for k in ordered_keys if k in ['Ctrl', 'Alt', 'Shift'] or k in win_display_values]
+        non_modifiers = [k for k in ordered_keys if k not in (['Ctrl', 'Alt', 'Shift'] + list(win_display_values))]
         
         if non_modifiers:
             # Show the full combination
@@ -278,9 +283,9 @@ class InputMonitorWidget:
             if isinstance(raw_name, str) and raw_name.lower().startswith('alt'):
                 raw_name = 'windows'
         key_name = self.format_key_name(raw_name)
-        # Remap Linux Win key reported as 'alt'
-        if scan_code is not None and key_name in ('alt', 'alt gr') and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
-            key_name = 'windows'
+        # Remap Linux Win key reported as 'alt' using the original raw_name
+        if scan_code is not None and isinstance(raw_name, str) and raw_name.lower() in ('alt', 'alt gr') and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
+            key_name = self.format_key_name('windows')
         if key_name in self.current_keys:
             self.current_keys.remove(key_name)
             # Remove all matching entries for this key (should be at most one)
@@ -359,7 +364,7 @@ class InputMonitorWidget:
         self.reset_job = self.root.after(2000, self.reset_display)
     
     def reset_display(self):
-        self.input_label.config(text="Waiting for input...")
+        self.input_label.config(text="")
         self.time_label.config(text="")
         self.reset_job = None
     
@@ -380,8 +385,15 @@ class InputMonitorWidget:
         self.mouse_listener.stop()
         self.root.destroy()
 
-if __name__ == "__main__":
+
+def main():
+    """Entry point for CLI or Python module execution. Starts the GUI loop."""
     root = tk.Tk()
-    app = InputMonitorWidget(root)
+    # Keep a persistent reference to the widget on the root to avoid
+    # being garbage-collected and to allow access from external code.
+    root._app = InputMonitorWidget(root)
     root.mainloop()
 
+
+if __name__ == "__main__":
+    main()
