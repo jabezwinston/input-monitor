@@ -104,6 +104,8 @@ class InputMonitorWidget:
         self._drag_start_y = 0
         self.current_keys = set()
         self.key_press_order = []  # Track order of key presses as (key_name, timestamp)
+        # Common Linux scan codes for left/right Meta (Win) keys (evdev KEY_LEFTMETA/KEY_RIGHTMETA)
+        self.WIN_SCAN_CODES = {125, 126}
         self.last_click_time = 0
         self.last_click_pos = (0, 0)
         self.reset_job = None
@@ -133,6 +135,9 @@ class InputMonitorWidget:
             'lshift': 'Shift',
             'rshift': 'Shift',
             'windows': 'Win',
+            'meta': 'Win',
+            'leftmeta': 'Win',
+            'rightmeta': 'Win',
             'super': 'Win',
             'lwin': 'Win',
             'rwin': 'Win',
@@ -188,10 +193,10 @@ class InputMonitorWidget:
         while True:
             event = kb.read_event()
             if event.event_type == kb.KEY_DOWN:
-                # Pass event time along so we can order by actual press time
-                self.on_key_press(event.name, getattr(event, 'time', None))
+                # Pass event time and scan_code along so we can order by actual press time and handle Linux meta key
+                self.on_key_press(event.name, getattr(event, 'time', None), getattr(event, 'scan_code', None))
             elif event.event_type == kb.KEY_UP:
-                self.on_key_release(event.name, getattr(event, 'time', None))
+                self.on_key_release(event.name, getattr(event, 'time', None), getattr(event, 'scan_code', None))
     
     def format_key_name(self, key_name):
         """Format key name for display"""
@@ -228,11 +233,21 @@ class InputMonitorWidget:
         # Handle other keys
         return key_name.replace('_', ' ').title()
     
-    def on_key_press(self, key_name, event_time=None):
-        key_name = self.format_key_name(key_name)
+    def on_key_press(self, key_name, event_time=None, scan_code=None):
+        # key_name here is the raw event.name reported by the keyboard library
+        raw_name = key_name
+        # Remap Linux Win/Meta key misreported as 'alt' by scan_code
+        if scan_code is not None and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
+            if isinstance(raw_name, str) and raw_name.lower().startswith('alt'):
+                raw_name = 'windows'
+        key_name = self.format_key_name(raw_name)
         if not key_name:  # Skip if we couldn't convert the key
             return
             
+        # Remap common Linux case where the Windows key reports as 'alt' (scan_code 125/126)
+        if scan_code is not None and key_name in ('alt', 'alt gr') and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
+            key_name = 'windows'
+
         if key_name not in self.current_keys:
             self.current_keys.add(key_name)
             if event_time is None:
@@ -256,8 +271,16 @@ class InputMonitorWidget:
                 modifiers_text = " + ".join(modifiers)
                 self.show_input(f"{modifiers_text} + ...")
     
-    def on_key_release(self, key_name, event_time=None):
-        key_name = self.format_key_name(key_name)
+    def on_key_release(self, key_name, event_time=None, scan_code=None):
+        raw_name = key_name
+        # Remap Linux Win/Meta key misreported as 'alt' by scan_code
+        if scan_code is not None and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
+            if isinstance(raw_name, str) and raw_name.lower().startswith('alt'):
+                raw_name = 'windows'
+        key_name = self.format_key_name(raw_name)
+        # Remap Linux Win key reported as 'alt'
+        if scan_code is not None and key_name in ('alt', 'alt gr') and scan_code in getattr(self, 'WIN_SCAN_CODES', set()):
+            key_name = 'windows'
         if key_name in self.current_keys:
             self.current_keys.remove(key_name)
             # Remove all matching entries for this key (should be at most one)
