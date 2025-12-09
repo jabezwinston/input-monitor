@@ -30,6 +30,10 @@ Homepage = "https://github.com/jabezwinston/input-monitor"
 
 [tool.setuptools]
 packages = ["input_monitor"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"input_monitor" = ["images/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "input_monitor.version.VERSION" }

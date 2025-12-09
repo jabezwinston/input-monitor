@@ -2,6 +2,11 @@
 
 A small Tkinter widget that displays keyboard and mouse events (input monitor).
 
+Mouse support:
+- Left Click: Displays left click and supports selection & double click.
+- Right Click: Displays right click.
+- Middle Click: Displays middle click and supports double click (new in this version).
+
 Run it from source (dev mode):
 
 ```bash

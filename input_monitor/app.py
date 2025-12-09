@@ -1,10 +1,12 @@
 import tkinter as tk
-from tkinter import font
+import os
+# 'font' module not required in this module; use tkinter font definitions inline where needed.
 import time
 from datetime import datetime
 from pynput import mouse
 import keyboard as kb
 import threading
+import re
 
 
 
@@ -41,16 +43,28 @@ class InputMonitorWidget:
         )
         self.title_label.pack(pady=5)
         
+        # Input and icon display
+        self.display_frame = tk.Frame(self.frame, bg='#2b2b2b')
+        self.display_frame.pack(pady=2, padx=10, fill=tk.X)
+
+        # Icon label for event/keys
+        self.icon_label = tk.Label(self.display_frame, bg='#2b2b2b')
+        self.icon_label.pack(side=tk.LEFT, padx=(0, 6))
+
         # Input display
         self.input_label = tk.Label(
-            self.frame, 
+            self.display_frame,
             text="", 
             bg='#2b2b2b', 
             fg='#00ff00',
             font=('Consolas', 16),
             wraplength=self.width-20
         )
-        self.input_label.pack(pady=2, padx=10)
+        self.input_label.pack(side=tk.LEFT, pady=2)
+        # Inline composition frame allows placing icons inline with text (e.g. Win icon between modifiers)
+        self.inline_frame = tk.Frame(self.display_frame, bg='#2b2b2b')
+        # Track any inline label widgets we create so they can be cleared
+        self._inline_children = []
         
         # Timestamp display
         self.time_label = tk.Label(
@@ -110,6 +124,7 @@ class InputMonitorWidget:
         self.WIN_SCAN_CODES = {125, 126}
         self.last_click_time = 0
         self.last_click_pos = (0, 0)
+        self.last_click_button = None
         self.reset_job = None
         
         # Mouse tracking
@@ -136,14 +151,14 @@ class InputMonitorWidget:
             'shift': 'Shift',
             'lshift': 'Shift',
             'rshift': 'Shift',
-            'windows': 'Win ⊞',
-            'meta': 'Win ⊞',
-            'leftmeta': 'Win ⊞',
-            'rightmeta': 'Win ⊞',
-            'super': 'Win ⊞',
-            'lwin': 'Win ⊞',
-            'rwin': 'Win ⊞',
-            'cmd': 'Win ⊞',
+            'windows': 'Win',
+            'meta': 'Win',
+            'leftmeta': 'Win',
+            'rightmeta': 'Win',
+            'super': 'Win',
+            'lwin': 'Win',
+            'rwin': 'Win',
+            'cmd': 'Win',
             'space': 'Space',
             'enter': 'Enter',
             'tab': 'Tab',
@@ -177,6 +192,56 @@ class InputMonitorWidget:
         
         # Setup event listeners
         self.setup_listeners()
+
+        # Load icons
+        self.load_icons()
+
+    def load_icons(self):
+        """Load image icons from the images directory if available."""
+        try:
+            base_dir = os.path.join(os.path.dirname(__file__), 'images')
+            win_path = os.path.join(base_dir, 'windows-10-logo.png')
+            left_path = os.path.join(base_dir, 'mouse-left-click.png')
+            right_path = os.path.join(base_dir, 'mouse-right-click.png')
+            middle_path = os.path.join(base_dir, 'mouse-middle-click.png')
+
+            # Tkinter PhotoImage supports PNG; subsample to a reasonable icon size if needed
+            self.win_icon = tk.PhotoImage(file=win_path) if os.path.isfile(win_path) else None
+            self.left_icon = tk.PhotoImage(file=left_path) if os.path.isfile(left_path) else None
+            self.right_icon = tk.PhotoImage(file=right_path) if os.path.isfile(right_path) else None
+
+            # Scale icons to desired target sizes to make mouse icons bigger
+            def scale_icon(img, target_px):
+                if img is None:
+                    return None
+                w, h = img.width(), img.height()
+                max_dim = max(w, h)
+                if max_dim == 0:
+                    return img
+                # If larger than target, subsample (integer downscale)
+                if max_dim > target_px:
+                    factor = max(1, max_dim // target_px)
+                    return img.subsample(factor, factor)
+                # If smaller than target, zoom up
+                if max_dim < target_px:
+                    factor = max(1, (target_px + max_dim - 1) // max_dim)
+                    return img.zoom(factor, factor)
+                return img
+
+            # Use a slightly larger size for mouse icons so they are visually bigger
+            self.win_icon = scale_icon(self.win_icon, 26)
+            # Use a bigger target for mouse icons to be clearly visible
+            self.left_icon = scale_icon(self.left_icon, 48)
+            self.right_icon = scale_icon(self.right_icon, 48)
+            self.middle_icon = tk.PhotoImage(file=middle_path) if os.path.isfile(middle_path) else None
+            self.middle_icon = scale_icon(self.middle_icon, 48)
+            # The Win icon may be reused as inline icon
+            self.win_icon_inline = self.win_icon
+        except Exception:
+            # If any error occurs, simply don't use icons
+            self.win_icon = None
+            self.left_icon = None
+            self.right_icon = None
     
     def setup_listeners(self):
         # Keyboard events using keyboard library
@@ -193,7 +258,15 @@ class InputMonitorWidget:
     def keyboard_listener(self):
         """Listen for keyboard events using keyboard library"""
         while True:
-            event = kb.read_event()
+            try:
+                event = kb.read_event()
+            except ImportError:
+                # keyboard library cannot be used on this system (e.g., requires root on Linux)
+                return
+            except Exception:
+                # Ignore transient exceptions and try again
+                time.sleep(0.1)
+                continue
             if event.event_type == kb.KEY_DOWN:
                 # Pass event time and scan_code along so we can order by actual press time and handle Linux meta key
                 self.on_key_press(event.name, getattr(event, 'time', None), getattr(event, 'scan_code', None))
@@ -260,21 +333,28 @@ class InputMonitorWidget:
         # Get modifiers and non-modifiers in the order they were pressed
         # Derive the order based on timestamps of key presses for reliability
         ordered_keys = [k for k, t in sorted(self.key_press_order, key=lambda x: x[1])]
-        # Support both 'Win' and 'Win ⊞' display strings for the Windows key
-        win_display_values = {'Win', 'Win ⊞'}
+        # Support 'Win' display string for the Windows key
+        win_display_values = {'Win'}
         modifiers = [k for k in ordered_keys if k in ['Ctrl', 'Alt', 'Shift'] or k in win_display_values]
         non_modifiers = [k for k in ordered_keys if k not in (['Ctrl', 'Alt', 'Shift'] + list(win_display_values))]
         
+        icon = None
         if non_modifiers:
             # Show the full combination
             keys = modifiers + non_modifiers
             key_text = " + ".join(keys)
-            self.show_input(key_text)
+            # If the keys contain Win, show the Win icon (even if combined)
+            if any(k in win_display_values for k in keys):
+                icon = getattr(self, 'win_icon', None)
+            self.show_input(key_text, icon=icon)
         else:
             # Only modifiers pressed
             if modifiers:
                 modifiers_text = " + ".join(modifiers)
-                self.show_input(f"{modifiers_text} + ...")
+                # If pressing only Win modifier, show icon
+                if len(modifiers) == 1 and any(v in modifiers for v in win_display_values):
+                    icon = getattr(self, 'win_icon', None)
+                self.show_input(f"{modifiers_text} + ...", icon=icon)
     
     def on_key_release(self, key_name, event_time=None, scan_code=None):
         raw_name = key_name
@@ -329,16 +409,30 @@ class InputMonitorWidget:
                 current_time = time.time()
                 if (current_time - self.last_click_time < 0.5 and 
                     abs(x - self.last_click_pos[0]) < 5 and 
-                    abs(y - self.last_click_pos[1]) < 5):
-                    self.show_input("Left Double Click")
+                    abs(y - self.last_click_pos[1]) < 5 and
+                    self.last_click_button == mouse.Button.left):
+                    self.show_input("Left Double Click", icon=getattr(self, 'left_icon', None))
                 else:
-                    self.show_input("Left Click")
+                    self.show_input("Left Click", icon=getattr(self, 'left_icon', None))
                 
                 self.last_click_time = current_time
                 self.last_click_pos = (x, y)
+                self.last_click_button = mouse.Button.left
                 
             elif button == mouse.Button.right:
-                self.show_input("Right Click")
+                self.show_input("Right Click", icon=getattr(self, 'right_icon', None))
+            elif button == mouse.Button.middle:
+                current_time = time.time()
+                if (current_time - self.last_click_time < 0.5 and 
+                    abs(x - self.last_click_pos[0]) < 5 and 
+                    abs(y - self.last_click_pos[1]) < 5 and
+                    self.last_click_button == mouse.Button.middle):
+                    self.show_input("Middle Double Click", icon=getattr(self, 'middle_icon', None))
+                else:
+                    self.show_input("Middle Click", icon=getattr(self, 'middle_icon', None))
+                self.last_click_time = current_time
+                self.last_click_pos = (x, y)
+                self.last_click_button = mouse.Button.middle
         else:
             if button == mouse.Button.left and self.is_selecting:
                 # End selection
@@ -351,13 +445,69 @@ class InputMonitorWidget:
                     if width > 5 or height > 5:
                         self.show_input(f"Selected Area: {width} x {height}")
     
-    def show_input(self, input_text):
+    def show_input(self, input_text, icon=None):
         # Cancel any pending reset
         if self.reset_job:
             self.root.after_cancel(self.reset_job)
             
-        # Update the display
-        self.input_label.config(text=input_text)
+        # Determine whether to display an inline icon with the Win key token inserted
+        # Normalize for consistent matching
+        token_to_replace = 'Win'
+        # Clear any previous inline children
+        for child in self._inline_children:
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._inline_children = []
+        # If the display text contains the Win token and we have an icon, build inline labels
+        if icon and re.search(r'\b' + re.escape(token_to_replace) + r'\b', input_text):
+            # Hide the left icon when displaying inline
+            self.icon_label.config(image='')
+            self.icon_label.image = None
+            # Hide the main input_label text so we'll use inline composition
+            self.input_label.config(text='')
+            # Ensure inline_frame is packed next to the label
+            self.inline_frame.pack(side=tk.LEFT, pady=2)
+            # Find the token position and split
+            match = re.search(r'\b' + re.escape(token_to_replace) + r'\b', input_text)
+            start, end = match.span()
+            left_text = input_text[:start].rstrip()
+            token_text = input_text[start:end]
+            right_text = input_text[end:].lstrip()
+            # Helper to create a label with given text
+            def make_label(text):
+                lbl = tk.Label(self.inline_frame, text=text, bg='#2b2b2b', fg='#00ff00', font=('Consolas', 16))
+                lbl.pack(side=tk.LEFT)
+                self._inline_children.append(lbl)
+                return lbl
+            if left_text:
+                make_label(left_text + ' ')
+            # Token label
+            make_label(token_text + ' ')
+            # Icon label inline
+            inline_icon_lbl = tk.Label(self.inline_frame, bg='#2b2b2b')
+            inline_icon_lbl.pack(side=tk.LEFT, padx=(0, 6))
+            inline_icon_lbl.config(image=icon)
+            inline_icon_lbl.image = icon
+            self._inline_children.append(inline_icon_lbl)
+            if right_text:
+                make_label(' ' + right_text)
+        else:
+            # If we had an inline frame previously, hide it
+            try:
+                self.inline_frame.pack_forget()
+            except Exception:
+                pass
+            # Update the display with a single text label
+            self.input_label.config(text=input_text)
+            # Update icon if provided, otherwise clear it
+            if icon:
+                self.icon_label.config(image=icon)
+                self.icon_label.image = icon
+            else:
+                self.icon_label.config(image='')
+                self.icon_label.image = None
         self.time_label.config(text=datetime.now().strftime("%H:%M:%S"))
         
         # Schedule a reset after 2 seconds
@@ -366,7 +516,24 @@ class InputMonitorWidget:
     def reset_display(self):
         self.input_label.config(text="")
         self.time_label.config(text="")
+        # Clear icon as well
+        try:
+            self.icon_label.config(image='')
+            self.icon_label.image = None
+        except Exception:
+            pass
         self.reset_job = None
+        # Clear inline frame
+        for child in self._inline_children:
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._inline_children = []
+        try:
+            self.inline_frame.pack_forget()
+        except Exception:
+            pass
     
     def start_drag(self, event):
         self._drag_start_x = event.x
