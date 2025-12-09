@@ -103,6 +103,7 @@ class InputMonitorWidget:
         self._drag_start_x = 0
         self._drag_start_y = 0
         self.current_keys = set()
+        self.key_press_order = []  # Track order of key presses as (key_name, timestamp)
         self.last_click_time = 0
         self.last_click_pos = (0, 0)
         self.reset_job = None
@@ -121,9 +122,20 @@ class InputMonitorWidget:
         # Key name mappings
         self.SPECIAL_KEYS = {
             'ctrl': 'Ctrl',
+            'control': 'Ctrl',
             'alt': 'Alt',
+            'alt gr': 'Alt',
+            'lctrl': 'Ctrl',
+            'rctrl': 'Ctrl',
+            'lalt': 'Alt',
+            'ralt': 'Alt',
             'shift': 'Shift',
+            'lshift': 'Shift',
+            'rshift': 'Shift',
             'windows': 'Win',
+            'super': 'Win',
+            'lwin': 'Win',
+            'rwin': 'Win',
             'cmd': 'Win',
             'space': 'Space',
             'enter': 'Enter',
@@ -176,14 +188,27 @@ class InputMonitorWidget:
         while True:
             event = kb.read_event()
             if event.event_type == kb.KEY_DOWN:
-                self.on_key_press(event.name)
+                # Pass event time along so we can order by actual press time
+                self.on_key_press(event.name, getattr(event, 'time', None))
             elif event.event_type == kb.KEY_UP:
-                self.on_key_release(event.name)
+                self.on_key_release(event.name, getattr(event, 'time', None))
     
     def format_key_name(self, key_name):
         """Format key name for display"""
-        key_name = key_name.lower()
+        # Normalize incoming key name and remove common punctuation
+        key_name = key_name.lower().replace('-', ' ').replace('_', ' ').strip()
         
+        # Normalize left/right modifier prefixes only for modifier keys (not arrow keys)
+        parts = key_name.split()
+        if len(parts) > 1 and parts[0] in ('left', 'right') and parts[1] in ('ctrl', 'control', 'shift', 'alt', 'alt gr', 'windows', 'super', 'cmd'):
+            key_name = ' '.join(parts[1:])
+
+        # Map common synonyms for modifier keys
+        if key_name == 'control':
+            key_name = 'ctrl'
+        if key_name == 'super':
+            key_name = 'windows'
+
         # Check if it's a special key
         if key_name in self.SPECIAL_KEYS:
             return self.SPECIAL_KEYS[key_name]
@@ -203,20 +228,22 @@ class InputMonitorWidget:
         # Handle other keys
         return key_name.replace('_', ' ').title()
     
-    def on_key_press(self, key_name):
+    def on_key_press(self, key_name, event_time=None):
         key_name = self.format_key_name(key_name)
         if not key_name:  # Skip if we couldn't convert the key
             return
             
-        self.current_keys.add(key_name)
+        if key_name not in self.current_keys:
+            self.current_keys.add(key_name)
+            if event_time is None:
+                event_time = time.time()
+            self.key_press_order.append((key_name, event_time))
         
-        # Get modifiers and non-modifiers
-        modifiers = [k for k in self.current_keys if k in ['Ctrl', 'Alt', 'Shift', 'Win']]
-        non_modifiers = [k for k in self.current_keys if k not in modifiers]
-        
-        # Sort modifiers in a consistent order
-        modifier_order = {'Ctrl': 0, 'Alt': 1, 'Shift': 2, 'Win': 3}
-        modifiers.sort(key=lambda k: modifier_order.get(k, 4))
+        # Get modifiers and non-modifiers in the order they were pressed
+        # Derive the order based on timestamps of key presses for reliability
+        ordered_keys = [k for k, t in sorted(self.key_press_order, key=lambda x: x[1])]
+        modifiers = [k for k in ordered_keys if k in ['Ctrl', 'Alt', 'Shift', 'Win']]
+        non_modifiers = [k for k in ordered_keys if k not in ['Ctrl', 'Alt', 'Shift', 'Win']]
         
         if non_modifiers:
             # Show the full combination
@@ -229,10 +256,12 @@ class InputMonitorWidget:
                 modifiers_text = " + ".join(modifiers)
                 self.show_input(f"{modifiers_text} + ...")
     
-    def on_key_release(self, key_name):
+    def on_key_release(self, key_name, event_time=None):
         key_name = self.format_key_name(key_name)
         if key_name in self.current_keys:
             self.current_keys.remove(key_name)
+            # Remove all matching entries for this key (should be at most one)
+            self.key_press_order = [(k, t) for (k, t) in self.key_press_order if k != key_name]
     
     def on_mouse_move(self, x, y):
         # Calculate delta
