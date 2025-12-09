@@ -3,7 +3,6 @@ import tkinter.font as tkfont
 import os
 import time
 import sys
-from datetime import datetime
 from pynput import mouse
 import keyboard as kb
 import threading
@@ -12,7 +11,7 @@ import re
 class InputMonitorWidget:
     # UI Configuration
     WINDOW_WIDTH = 360
-    WINDOW_HEIGHT = 180
+    WINDOW_HEIGHT = 200
     WINDOW_INITIAL_X = 100
     WINDOW_INITIAL_Y = 100
     
@@ -37,6 +36,11 @@ class InputMonitorWidget:
     # Icon sizes
     WIN_ICON_SIZE = 26
     MOUSE_ICON_SIZE = 48
+    
+    # LED indicators
+    LED_SIZE = 10
+    LED_COLOR_OFF = '#1a1a1a'
+    LED_COLOR_ON = '#00ff00'
     
     # Linux scan codes for Win/Meta keys
     WIN_SCAN_CODES = {125, 126}
@@ -72,9 +76,9 @@ class InputMonitorWidget:
         # Setup UI components
         self._setup_title()
         self._setup_input_display()
-        self._setup_timestamp_display()
         self._setup_mouse_display()
         self._setup_selection_display()
+        self._setup_led_display()
         self._setup_close_button()
         
         # Setup event listeners
@@ -159,17 +163,6 @@ class InputMonitorWidget:
         # Inline composition frame allows placing icons inline with text
         self.inline_frame = tk.Frame(self.center_frame, bg=self.BG_COLOR)
     
-    def _setup_timestamp_display(self):
-        """Create the timestamp display."""
-        self.time_label = tk.Label(
-            self.frame, 
-            text="", 
-            bg=self.BG_COLOR, 
-            fg=self.TIME_COLOR,
-            font=self.font_time
-        )
-        self.time_label.pack(pady=2)
-    
     def _setup_mouse_display(self):
         """Create the mouse position display."""
         self.mouse_frame = tk.Frame(self.frame, bg=self.BG_COLOR)
@@ -197,6 +190,131 @@ class InputMonitorWidget:
             font=self.font_mouse
         )
         self.selection_label.pack(side=tk.LEFT)
+    
+    def _setup_led_display(self):
+        """Create the LED status indicators for keyboard locks."""
+        self.led_frame = tk.Frame(self.frame, bg=self.BG_COLOR)
+        self.led_frame.pack(pady=5, padx=10)
+        
+        # Container for each LED and its label
+        led_info = [
+            ('num_lock', 'Num'),
+            ('caps_lock', 'Caps'),
+            ('scroll_lock', 'Scroll')
+        ]
+        
+        for led_id, label_text in led_info:
+            led_container = tk.Frame(self.led_frame, bg=self.BG_COLOR)
+            led_container.pack(side=tk.LEFT, padx=8)
+            
+            # LED circle (using a Canvas for smooth circle)
+            canvas = tk.Canvas(
+                led_container,
+                width=self.LED_SIZE,
+                height=self.LED_SIZE,
+                bg=self.BG_COLOR,
+                highlightthickness=0
+            )
+            canvas.pack()
+            
+            # Draw circle
+            circle = canvas.create_oval(
+                1, 1, self.LED_SIZE-1, self.LED_SIZE-1,
+                fill=self.LED_COLOR_OFF,
+                outline=''
+            )
+            
+            # Store canvas and circle reference
+            setattr(self, f'{led_id}_canvas', canvas)
+            setattr(self, f'{led_id}_circle', circle)
+            
+            # Label below LED
+            label = tk.Label(
+                led_container,
+                text=label_text,
+                bg=self.BG_COLOR,
+                fg=self.TEXT_COLOR,
+                font=('Arial', 10)
+            )
+            label.pack()
+        
+        # Start monitoring LED states
+        self._update_led_states()
+    
+    def _update_led_states(self):
+        """Update LED indicators based on keyboard lock states."""
+        try:
+            import ctypes
+            import ctypes.util
+            
+            # Windows implementation
+            if sys.platform == 'win32':
+                try:
+                    # Virtual key codes for lock keys
+                    VK_CAPITAL = 0x14  # Caps Lock
+                    VK_NUMLOCK = 0x90  # Num Lock
+                    VK_SCROLL = 0x91   # Scroll Lock
+                    
+                    # GetKeyState returns the status of the specified virtual key
+                    # The low-order bit indicates whether the key is toggled (on/off)
+                    user32 = ctypes.windll.user32
+                    
+                    caps_on = bool(user32.GetKeyState(VK_CAPITAL) & 0x0001)
+                    num_on = bool(user32.GetKeyState(VK_NUMLOCK) & 0x0001)
+                    scroll_on = bool(user32.GetKeyState(VK_SCROLL) & 0x0001)
+                    
+                    # Update LEDs
+                    self._set_led_state('caps_lock', caps_on)
+                    self._set_led_state('num_lock', num_on)
+                    self._set_led_state('scroll_lock', scroll_on)
+                except Exception:
+                    pass
+            
+            # Linux implementation using X11
+            elif sys.platform.startswith('linux'):
+                try:
+                    # Load X11 library
+                    x11 = ctypes.cdll.LoadLibrary(ctypes.util.find_library('X11'))
+                    display = x11.XOpenDisplay(None)
+                    
+                    if display:
+                        # Get keyboard state
+                        keys = (ctypes.c_char * 32)()
+                        x11.XQueryKeymap(display, keys)
+                        
+                        # XkbGetIndicatorState for LED states
+                        xkb = ctypes.cdll.LoadLibrary(ctypes.util.find_library('X11'))
+                        state = ctypes.c_uint()
+                        xkb.XkbGetIndicatorState(display, 0x100, ctypes.byref(state))
+                        
+                        # Extract LED states (bits 0, 1, 2 for Caps, Num, Scroll)
+                        caps_on = bool(state.value & 0x01)
+                        num_on = bool(state.value & 0x02)
+                        scroll_on = bool(state.value & 0x04)
+                        
+                        # Update LEDs
+                        self._set_led_state('num_lock', num_on)
+                        self._set_led_state('caps_lock', caps_on)
+                        self._set_led_state('scroll_lock', scroll_on)
+                        
+                        x11.XCloseDisplay(display)
+                except Exception:
+                    pass
+            
+        except Exception:
+            pass
+        
+        # Schedule next update
+        self.root.after(100, self._update_led_states)
+    
+    def _set_led_state(self, led_id, is_on):
+        """Set the visual state of an LED indicator."""
+        canvas = getattr(self, f'{led_id}_canvas', None)
+        circle = getattr(self, f'{led_id}_circle', None)
+        
+        if canvas and circle:
+            color = self.LED_COLOR_ON if is_on else self.LED_COLOR_OFF
+            canvas.itemconfig(circle, fill=color)
     
     def _setup_close_button(self):
         """Create the close button."""
@@ -501,7 +619,6 @@ class InputMonitorWidget:
         else:
             self._display_standard(input_text, icon)
         
-        self.time_label.config(text=datetime.now().strftime("%H:%M:%S"))
         self.reset_job = self.root.after(self.RESET_DELAY_MS, self.reset_display)
     
     def _clear_inline_children(self):
@@ -571,7 +688,6 @@ class InputMonitorWidget:
     def reset_display(self):
         """Reset the display to empty state."""
         self.input_label.config(text="", font=self.font_input)
-        self.time_label.config(text="")
         self.icon_label.config(image='')
         self.icon_label.image = None
         self.reset_job = None
