@@ -1,3 +1,11 @@
+"""
+Copyright (C) 2025, Jabez Winston C
+
+Author  : Jabez Winston C <jabezwinston@gmail.com>
+License : MIT
+Date    : 09-Sep-2025
+
+"""
 import tkinter as tk
 import tkinter.font as tkfont
 import os
