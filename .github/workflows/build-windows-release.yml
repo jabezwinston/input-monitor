@@ -1,0 +1,67 @@
+name: Build Windows Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for the release (optional, for manual testing)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt || python -m pip install pynput keyboard
+        shell: pwsh
+
+      - name: Build Windows executable
+        run: |
+          cd packaging/windows
+          ./build_windows_exe.bat
+        shell: cmd
+
+      - name: Get version
+        id: get_version
+        run: |
+          $version = python -c "from input_monitor.version import VERSION; print(VERSION)"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Rename executable with version
+        run: |
+          $version = "${{ steps.get_version.outputs.version }}"
+          Move-Item -Path "dist/input-monitor.exe" -Destination "dist/input-monitor-$version-windows.exe"
+        shell: pwsh
+
+      - name: Upload executable as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable
+          path: dist/input-monitor-*.exe
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/input-monitor-*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
