@@ -1,26 +1,32 @@
 # Input Monitor
 
-A small Tkinter widget that displays keyboard and mouse events (input monitor).
+Input Monitor is an on-screen draggable widget that displays keyboard and mouse activity.
 
-Mouse support:
-- Left Click: Displays left click and supports selection & double click.
-- Right Click: Displays right click.
-- Middle Click: Displays middle click and supports double click (new in this version).
+## Uses
+- Demostrate the use of keyboard shortcuts and mouse actions during presentations or screen recordings.
+- Find XY coordinates of mouse cursor
+- See current keyboard lock states (Num Lock, Caps Lock, Scroll Lock)
+- Find area under mouse drag selection
 
-Run it from source (dev mode):
+## Compatibility
+Tested on Windows 10/11 and Ubuntu 24.04.
+
+## Installation
+
+```
+pip install input-monitor
+```
+
+If you don't have Python installed, get the [latest standalone executable](https://github.com/zion-school/input-monitor/releases/latest/download/input-monitor.exe).
+
+## Running the app
 
 ```bash
-# Run as a module (note: module names cannot contain hyphens, so use the underscore package name)
-python -m input_monitor
-# or after installing in editable mode, use the console script named with the hyphen
-pip install -e .
 input-monitor
 ```
 
-Note: `python -m input-monitor` is not supported because Python module names must be valid identifiers (hyphens are not allowed). Use `input-monitor` from the command line (console script), or run as a module with the underscore version `python -m input_monitor`.
+or
 
-Packaging
-```
-python -m build
-pip install dist/input-monitor-<version>.tar.gz
+```bash
+python -m input_monitor
 ```

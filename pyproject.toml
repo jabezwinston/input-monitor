@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "input-monitor"
 dynamic = ["version"]
 
-# Optional metadata
 description = "An on-screen input & mouse tracker widget"
 readme = "README.md"
 license = "MIT"
@@ -17,6 +16,7 @@ keywords = ["input", "monitor", "widget", "mouse", "keyboard"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: Windows",
     "Operating System :: POSIX :: Linux",
 ]
 
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jabezwinston/input-monitor"
+Homepage = "https://github.com/zion-school/input-monitor"
 
 [tool.setuptools]
 packages = ["input_monitor"]
